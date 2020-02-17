@@ -1,53 +1,21 @@
-package net.slardar.ndk
+package net.slardar.slardarHTTP
 
 import java.io.File
+import java.io.FileOutputStream
+import java.io.InputStreamReader
 import java.math.BigInteger
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLConnection
+import java.net.URLEncoder
+import java.nio.charset.Charset
 import java.security.SecureRandom
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
-import java.util.*
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 import javax.net.ssl.X509TrustManager
-import kotlin.collections.ArrayList
 
-/*
-GET /test.php HTTP/1.1
-Host: 192.168.1.101
-Connection: keep-alive
-Upgrade-Insecure-Requests: 1
-DNT: 1
-User-Agent: Mozilla/5.0 (Linux; Android 8.0.0; H8166) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.99 Mobile Safari/537.36
-Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,* / *;q=0.8,application/signed-exchange;v=b3;q=0.9
-                                                                                  should remove space
-Referer: http://192.168.1.101/
-Accept-Encoding: gzip, deflate
-Accept-Language: zh-CN,zh;q=0.9,en;q=0.8
-*/
-
-/*
-
-POST /test.php HTTP/1.1
-Host: 192.168.1.101
-Connection: keep-alive
-Content-Length: 138
-Cache-Control: max-age=0
-Origin: http://192.168.1.101
-Upgrade-Insecure-Requests: 1
-DNT: 1
-Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryGcy33s2mlfhv5b6d
-User-Agent: Mozilla/5.0 (Linux; Android 8.0.0; H8166) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.99 Mobile Safari/537.36
-Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,* / *;q=0.8,application/signed-exchange;v=b3;q=0.9
-Referer: http://192.168.1.101/test.php
-Accept-Encoding: gzip, deflate
-Accept-Language: zh-CN,zh;q=0.9,en;q=0.8
-
-------WebKitFormBoundaryGcy33s2mlfhv5b6d
-Content-Disposition: form-data; name="usn"
- */
 class SlardarHTTP {
     class SlardarHTTPException(message: String, private val errorCode: Int) : Exception(message) {
         fun getErrorCode(): Int {
@@ -55,9 +23,11 @@ class SlardarHTTP {
         }
     }
 
-    class SlardarX509TrustManager(private val certSerialNumber: BigInteger? = null) :
+    private class SlardarX509TrustManager(
+        private val checkCertificate: Boolean,
+        private val certSerialNumber: BigInteger? = null
+    ) :
         X509TrustManager {
-
         override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {
             if (certSerialNumber != null) {
                 if (chain != null) {
@@ -87,6 +57,19 @@ class SlardarHTTP {
                 } else {
                     throw CertificateException("Server certificate chain is missing")
                 }
+            } else if (checkCertificate) {
+                if (chain == null) {
+                    throw CertificateException("Server certificate chain is missing")
+                }
+                if (chain.isEmpty()) {
+                    throw CertificateException("Server certificate chain length is 0")
+                }
+
+                try {
+                    chain[0].checkValidity()
+                } catch (e: java.lang.Exception) {
+                    throw CertificateException(e)
+                }
             }
         }
 
@@ -95,67 +78,107 @@ class SlardarHTTP {
         }
     }
 
+    enum class Method {
+        POST, GET
+    }
+
     companion object {
         private const val TIME_OUT = 5000
 
-        fun httpGetStringRequest(
+        fun httpFormStringRequest(
             requestURL: String,
-            header: HashMap<String, String>?,
-            getArgs: HashMap<String, String>?
-        ): String {
-            return httpPostGetFormStringRequest(requestURL, header, getArgs, null)
-        }
-
-        fun httpPostGetFormStringRequest(
-            requestURL: String,
-            header: HashMap<String, String>?,
-            getArgs: HashMap<String, String>?,
-            postArgs: HashMap<String, Objects>?
+            method: Method,
+            headers: HashMap<String, String>? = null,
+            getArgs: HashMap<String, String>? = null,
+            postArgs: HashMap<String, Any>? = null
         ): String {
             var newURL = requestURL
             if (getArgs != null) for (getArg in getArgs) {
                 newURL += when (newURL) {
                     requestURL -> {
-                        ("?" + getArg.key + "=" + getArg.value)
+                        ("?" + URLEncoder.encode(getArg.key, "UTF-8") + "=" + URLEncoder.encode(
+                            getArg.value,
+                            "UTF-8"
+                        ))
                     }
                     else -> {
-                        ("&" + getArg.key + "=" + getArg.value)
+                        ("&" + URLEncoder.encode(getArg.key, "UTF-8") + "=" + URLEncoder.encode(
+                            getArg.value,
+                            "UTF-8"
+                        ))
                     }
                 }
             }
-            return httpPostFormStringRequest(newURL, header, postArgs)
+            checkType(postArgs)
+            val requestConnection: HttpURLConnection =
+                getURLConnection(newURL, false, null) as HttpURLConnection
+            var postTemp: File? = null
+            if (postArgs.isNullOrEmpty()) {
+                prepareHeader(requestConnection, headers, null)
+                requestConnection.doInput = true
+                requestConnection.doOutput = false
+            } else {
+                val boundary = boundaryBuilder()
+                prepareHeader(requestConnection, headers, boundary)
+                postTemp =
+                    postBuilder(
+                        postArgs,
+                        boundary
+                    )
+                requestConnection.setRequestProperty("Content-Length", postTemp.length().toString())
+            }
+            if (method == Method.GET) {
+                requestConnection.requestMethod = "GET"
+                requestConnection.doInput = true
+                requestConnection.doOutput = false
+            } else {
+                requestConnection.requestMethod = "POST"
+                requestConnection.doInput = true
+                requestConnection.doOutput = true
+            }
+            requestConnection.useCaches = false
+            try {
+                if (postTemp != null) {
+                    val os = requestConnection.outputStream
+                    os.write(postTemp.readBytes())
+                    postTemp.delete()
+                    os.flush()
+                    os.close()
+                }
+
+                if (requestConnection.responseCode != 200) {
+                    throw SlardarHTTPException(
+                        requestConnection.responseMessage,
+                        requestConnection.responseCode
+                    )
+                }
+                val charset = getCharset(requestConnection)
+                val isr = InputStreamReader(
+                    requestConnection.inputStream,
+                    charset
+                )
+                var responseText = ""
+                var tmp = isr.readText()
+                while (tmp.isNotEmpty()) {
+                    responseText += tmp
+                    tmp = isr.readText()
+                }
+                return responseText
+            } catch (ex: SlardarHTTPException) {
+                throw ex
+            } catch (ex: java.lang.Exception) {
+                throw SlardarHTTPException(
+                    ex.message ?: "Unexpected error", -2
+                )
+            }
         }
 
-        fun httpPostFormStringRequest(
+        fun httpsFormStringRequest(
             requestURL: String,
-            header: HashMap<String, String>?,
-            postArgs: HashMap<String, Objects>?
-        ): String {
-            return ""
-        }
-
-        fun httpsGetStringRequest(
-            requestURL: String,
-            header: HashMap<String, String>?,
-            getArgs: HashMap<String, String>?,
-            checkCertificate: Boolean = false,
-            certSerialNumber: BigInteger? = null
-        ): String {
-            return httpsPostGetFormStringRequest(
-                requestURL,
-                header,
-                getArgs,
-                null,
-                checkCertificate,
-                certSerialNumber
-            )
-        }
-
-        fun httpsPostGetFormStringRequest(
-            requestURL: String,
-            header: HashMap<String, String>?,
-            getArgs: HashMap<String, String>?,
-            postArgs: HashMap<String, Objects>?,
+            method: Method,
+            headers: HashMap<String, String>? = null,
+            getArgs: HashMap<String, String>? = null,
+            postArgs: HashMap<String, Any>? = null,
             checkCertificate: Boolean = false,
             certSerialNumber: BigInteger? = null
         ): String {
@@ -163,50 +186,130 @@ class SlardarHTTP {
             if (getArgs != null) for (getArg in getArgs) {
                 newURL += when (newURL) {
                     requestURL -> {
-                        ("?" + getArg.key + "=" + getArg.value)
+                        ("?" + URLEncoder.encode(getArg.key, "UTF-8") + "=" + URLEncoder.encode(
+                            getArg.value,
+                            "UTF-8"
+                        ))
                     }
                     else -> {
-                        ("&" + getArg.key + "=" + getArg.value)
+                        ("&" + URLEncoder.encode(getArg.key, "UTF-8") + "=" + URLEncoder.encode(
+                            getArg.value,
+                            "UTF-8"
+                        ))
                     }
                 }
             }
-            return httpsPostFormStringRequest(
-                newURL,
-                header,
-                postArgs,
-                checkCertificate,
-                certSerialNumber
-            )
-        }
-
-        fun httpsPostFormStringRequest(
-            requestURL: String,
-            header: HashMap<String, String>?,
-            postArgs: HashMap<String, Objects>?,
-            checkCertificate: Boolean = false,
-            certSerialNumber: BigInteger? = null
-        ): String {
-            postArgs?.forEach {
-                if (it.value.javaClass.name != String::javaClass.name && it.value.javaClass.name != File::javaClass.name)
-                    throw SlardarHTTP("Only file and string is supported", 0)
-            }
+            checkType(postArgs)
             val requestConnection: HttpsURLConnection =
                 getURLConnection(
-                    requestURL,
+                    newURL,
                     checkCertificate,
                     certSerialNumber
                 ) as HttpsURLConnection
-            requestConnection.requestMethod = "POST"
-            if (!postArgs.isNullOrEmpty()) {
-                requestConnection.setRequestProperty(
-                    "Content-Type",
-                    "application/x-www-form-urlencoded"
+            var postTemp: File? = null
+            if (postArgs.isNullOrEmpty()) {
+                prepareHeader(requestConnection, headers, null)
+                requestConnection.doInput = true
+                requestConnection.doOutput = false
+            } else {
+                val boundary = boundaryBuilder()
+                prepareHeader(requestConnection, headers, boundary)
+                postTemp =
+                    postBuilder(
+                        postArgs,
+                        boundary
+                    )
+                requestConnection.setRequestProperty("Content-Length", postTemp.length().toString())
+            }
+            if (method == Method.GET) {
+                requestConnection.requestMethod = "GET"
+                requestConnection.doInput = true
+                requestConnection.doOutput = false
+                postTemp?.delete()
+                postTemp = null
+            } else {
+                requestConnection.requestMethod = "POST"
+                requestConnection.doInput = true
+                requestConnection.doOutput = true
+            }
+            requestConnection.useCaches = false
+            try {
+                if (postTemp != null) {
+                    val os = requestConnection.outputStream
+                    os.write(postTemp.readBytes())
+                    postTemp.delete()
+                    os.flush()
+                    os.close()
+                }
+
+                if (requestConnection.responseCode != 200) {
+                    throw SlardarHTTPException(
+                        requestConnection.responseMessage,
+                        requestConnection.responseCode
+                    )
+                }
+                val charset = getCharset(requestConnection)
+                val isr = InputStreamReader(
+                    requestConnection.inputStream,
+                    charset
+                )
+                var responseText = ""
+                var tmp = isr.readText()
+                while (tmp.isNotEmpty()) {
+                    responseText += tmp
+                    tmp = isr.readText()
+                }
+                return responseText
+            } catch (ex: SlardarHTTPException) {
+                throw ex
+            } catch (ex: java.lang.Exception) {
+                throw SlardarHTTPException(
+                    ex.message ?: "Unexpected error", -2
                 )
             }
+        }
 
+        private fun postBuilder(postArgs: HashMap<String, Any>, boundary: String): File {
+            val tmpFile: File = File.createTempFile(System.nanoTime().toString(), null)
+            val fos = FileOutputStream(tmpFile)
 
-
-            return ""
+            if (postArgs.isNotEmpty()) {
+                for (post in postArgs) {
+                    when (post.value) {
+                        is String -> {
+                            fos.write(
+                                ("--${boundary}\r\nContent-Disposition: form-data; name=\"${post.key}\"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n" + URLEncoder.encode(
+                                    post.value as String,
+                                    "UTF-8"
+                                ) + "\r\n").toByteArray(Charsets.UTF_8)
+                            )
+                        }
+                        is File -> {
+                            val postFile = (post.value as File)
+                            fos.write(
+                                "--${boundary}\r\nContent-Disposition: form-data; name=\"${post.key}\"filename=\"${postFile.name}\"\r\nContent-Type: ${URLConnection.guessContentTypeFromName(
+                                    postFile.name
+                                )} Content-Transfer-Encoding: binary\r\n\r\n".toByteArray(Charsets.UTF_8)
+                            )
+                            fos.write(postFile.readBytes())
+                            fos.write("\r\n--${boundary}--\r\n".toByteArray(Charsets.UTF_8))
+                        }
+                        is ByteArray -> {
+                            val postByteArray = (post.value as ByteArray)
+                            fos.write(
+                                "--${boundary}\r\nContent-Disposition: form-data; name=\"${post.key}\"; filename=\"${post.key + postByteArray.size.toString()}\"\r\nContent-Type: Unknown; Content-Transfer-Encoding: binary\r\n\r\n".toByteArray(
+                                    Charsets.UTF_8
+                                )
+                            )
+                            fos.write(postByteArray)
+                            fos.write("\r\n--${boundary}--\r\n".toByteArray(Charsets.UTF_8))
+                        }
+                    }
+                }
+            }
+            fos.flush()
+            fos.close()
+            return tmpFile
         }
 
 
@@ -216,48 +319,96 @@ class SlardarHTTP {
             certSerialNumber: BigInteger? = null
         ): URLConnection {
             val url = URL(requestURL)
-            return if (requestURL.contains("^https:\\/\\/")) {
+            return if (requestURL.contains(Regex("^https:\\/\\/"))) {
                 val sslContext = SSLContext.getInstance("SSL")
-                if (checkCertificate && certSerialNumber != null) {
+                if (checkCertificate || certSerialNumber != null) {
                     sslContext.init(
                         null,
-                        arrayOf(SlardarX509TrustManager(certSerialNumber)),
+                        arrayOf(SlardarX509TrustManager(checkCertificate, certSerialNumber)),
                         SecureRandom()
                     )
                 } else {
                     sslContext.init(
-                        null,
-                        arrayOf(SlardarX509TrustManager(null)),
+                        null, arrayOf(SlardarX509TrustManager(false)),
                         SecureRandom()
                     )
                 }
                 val requestConnection = url.openConnection() as HttpsURLConnection
                 requestConnection.sslSocketFactory = sslContext.socketFactory
+                requestConnection.connectTimeout = TIME_OUT
                 requestConnection
             } else {
-                val connection = url.openConnection() as HttpURLConnection
-                connection.connectTimeout = TIME_OUT
-                connection
+                val requestConnection = url.openConnection() as HttpURLConnection
+                requestConnection.connectTimeout = TIME_OUT
+                requestConnection
             }
         }
 
 
-        private fun perparHeader(
+        private fun prepareHeader(
             requestConnection: URLConnection,
-            header: HashMap<String, String>?
+            headers: HashMap<String, String>?,
+            boundary: String?
         ) {
-            val headerKeys: ArrayList<String> = ArrayList()
-            header?.keys?.toList()?.forEach {
-                headerKeys.add(it.toLowerCase())
+            var hasUA = false
+            if (!headers.isNullOrEmpty()) {
+                for (header in headers.iterator()) {
+                    if (header.key.toLowerCase() == "user-agent") {
+                        hasUA = true
+                    } else if (header.key.toLowerCase() != "content-length") {
+                        requestConnection.setRequestProperty(header.key, header.value)
+                    }
+                }
             }
+            if (boundary != null)
+                requestConnection.setRequestProperty(
+                    "Content-Type",
+                    "multipart/form-data; boundary=${boundary}"
+                )
+            if (!hasUA)
+                requestConnection.setRequestProperty(
+                    "User-Agent",
+                    "Mozilla/5.0 Slardar HTTP Requester"
+                )
 
-            val ua: String = if (headerKeys.contains("user-agent")) {
-                header?.get("user-agent") ?: header?.get("User-Agent") ?: "Slardar HTTP Requester"
+        }
+
+        private fun boundaryBuilder(): String {
+            return "----SlardarHTTPRequesterBOUNDARY" + "%02x".format(System.currentTimeMillis())
+        }
+
+        private fun checkType(postArgs: HashMap<String, Any>?) {
+            postArgs?.forEach {
+                if (it.value !is String && it.value !is File && it.value !is ByteArray)
+                    throw SlardarHTTPException(
+                        "Only File, String adn ByteArray Class is supported, object type:" + it.value.javaClass.name,
+                        -1
+                    )
+            }
+        }
+
+        private fun getCharset(requestConnection: URLConnection): Charset {
+            var charsetText: String? = requestConnection.contentEncoding
+            return if (requestConnection.contentEncoding == null) {
+                charsetText = requestConnection.getHeaderField("content-type")
+                if (charsetText == null) {
+                    Charsets.UTF_8
+                } else {
+                    if (charsetText.contains("charset=")) {
+                        val start = charsetText.indexOf("charset=", 0, true) + 8
+                        var end = charsetText.indexOf(";", start, true)
+                        if (end == -1) {
+                            end = charsetText.length
+                        }
+
+                        Charset.forName(charsetText.substring(start, end))
+                    } else {
+                        Charsets.UTF_8
+                    }
+                }
             } else {
-                "Slardar HTTP Requester"
+                Charset.forName(charsetText)
             }
-
-            requestConnection.setRequestProperty("User-Agent", ua)
         }
     }
 }
