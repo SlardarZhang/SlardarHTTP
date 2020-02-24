@@ -153,10 +153,7 @@ class SlardarHTTP {
                 for (post in postArgs) {
                     when (post.value) {
                         is String -> {
-                            headerString += "--${boundary}\r\nContent-Disposition: form-data; name=\"${post.key}\"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n" + URLEncoder.encode(
-                                post.value as String,
-                                "UTF-8"
-                            ) + "\r\n"
+                            headerString += "--${boundary}\r\nContent-Disposition: form-data; name=\"${post.key}\"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n" + post.value as String + "\r\n"
                         }
                         is File -> {
                             val postFile = (post.value as File)
@@ -186,10 +183,9 @@ class SlardarHTTP {
                     when (post.value) {
                         is String -> {
                             os.write(
-                                ("--${boundary}\r\nContent-Disposition: form-data; name=\"${post.key}\"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n" + URLEncoder.encode(
-                                    post.value as String,
-                                    "UTF-8"
-                                ) + "\r\n").toByteArray(Charsets.UTF_8)
+                                ("--${boundary}\r\nContent-Disposition: form-data; name=\"${post.key}\"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n" + post.value as String + "\r\n").toByteArray(
+                                    Charsets.UTF_8
+                                )
                             )
                             os.flush()
                         }
@@ -307,7 +303,7 @@ class SlardarHTTP {
             var hasLanguage = false
             if (!headers.isNullOrEmpty()) {
                 for (header in headers.iterator()) {
-                    when (header.key.toLowerCase()) {
+                    when (header.key.toLowerCase(Locale.getDefault())) {
                         "user-agent" -> {
                             hasUA = true
                         }
@@ -315,7 +311,7 @@ class SlardarHTTP {
                             hasLanguage = true
                         }
                     }
-                    if (header.key.toLowerCase() != "content-length") {
+                    if (header.key.toLowerCase(Locale.getDefault()) != "content-length") {
                         requestConnection.setRequestProperty(header.key, header.value)
                     }
                 }
@@ -448,7 +444,7 @@ class SlardarHTTP {
                                 )
                             } else {
                                 return getPostResponseStream(
-                                    newURLMatcher.group(1).replace("&amp;", "&"),
+                                    newURLMatcher.group(1)!!.replace("&amp;", "&"),
                                     method,
                                     headers,
                                     null,
