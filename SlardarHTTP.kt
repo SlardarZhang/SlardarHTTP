@@ -362,7 +362,7 @@ class SlardarHTTP {
 
         private fun checkType(postArgs: HashMap<String, Any>?) {
             postArgs?.forEach {
-                if (it.value !is String && it.value !is File && it.value !is ByteArray)
+                if (it.value !is String && it.value !is File && it.value !is ByteArray && it.value !is Number)
                     throw SlardarHTTPException(
                         "Only File, String, Number and ByteArray Class is supported, object type:" + it.value.javaClass.name,
                         -1
