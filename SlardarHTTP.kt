@@ -155,6 +155,9 @@ class SlardarHTTP {
                         is String -> {
                             headerString += "--${boundary}\r\nContent-Disposition: form-data; name=\"${post.key}\"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n" + post.value as String + "\r\n"
                         }
+                        is Number ->{
+                            headerString += "--${boundary}\r\nContent-Disposition: form-data; name=\"${post.key}\"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n" + (post.value as Number).toString() + "\r\n"
+                        }
                         is File -> {
                             val postFile = (post.value as File)
                             headerString += (
@@ -184,6 +187,14 @@ class SlardarHTTP {
                         is String -> {
                             os.write(
                                 ("--${boundary}\r\nContent-Disposition: form-data; name=\"${post.key}\"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n" + post.value as String + "\r\n").toByteArray(
+                                    Charsets.UTF_8
+                                )
+                            )
+                            os.flush()
+                        }
+                        is Number -> {
+                            os.write(
+                                ("--${boundary}\r\nContent-Disposition: form-data; name=\"${post.key}\"\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n" + (post.value as Number).toString() + "\r\n").toByteArray(
                                     Charsets.UTF_8
                                 )
                             )
@@ -353,7 +364,7 @@ class SlardarHTTP {
             postArgs?.forEach {
                 if (it.value !is String && it.value !is File && it.value !is ByteArray)
                     throw SlardarHTTPException(
-                        "Only File, String adn ByteArray Class is supported, object type:" + it.value.javaClass.name,
+                        "Only File, String, Number and ByteArray Class is supported, object type:" + it.value.javaClass.name,
                         -1
                     )
             }
