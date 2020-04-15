@@ -1,0 +1,12 @@
+<component name="ArtifactManager">
+  <artifact name="SlardarHTTP:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/SlardarHTTP_jar</output-path>
+    <root id="root">
+      <element id="archive" name="SlardarHTTP.jar">
+        <element id="module-output" name="SlardarHTTP" />
+      </element>
+      <element id="library" level="project" name="json" />
+      <element id="library" level="project" name="KotlinJavaRuntime" />
+    </root>
+  </artifact>
+</component>
