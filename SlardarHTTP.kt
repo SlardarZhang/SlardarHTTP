@@ -1,6 +1,6 @@
 package net.slardar.slardarHTTP
 
-import android.util.Log
+import android.annotation.SuppressLint
 import org.json.JSONObject
 import java.io.File
 import java.io.OutputStream
@@ -19,6 +19,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.X509TrustManager
 import kotlin.collections.HashMap
 
+@Suppress("unused", "MemberVisibilityCanBePrivate")
 class SlardarHTTP {
 	class SlardarHTTPException(message: String, private val errorCode: Int) : Exception(message) {
 		fun getErrorCode(): Int {
@@ -26,6 +27,7 @@ class SlardarHTTP {
 		}
 	}
 
+	@Suppress("MemberVisibilityCanBePrivate", "CanBeParameter")
 	class SlardarHTTPJSONException(val jsonMessage: JSONObject, private val errorCode: Int) :
 		Exception(jsonMessage.toString()) {
 		fun getErrorCode(): Int {
@@ -33,8 +35,9 @@ class SlardarHTTP {
 		}
 	}
 
-	class CookiesString(val cookies: HashMap<String, String>, val text: String) {}
+	class CookiesString(val cookies: HashMap<String, String>, val text: String)
 
+	@SuppressLint("CustomX509TrustManager")
 	private class SlardarX509TrustManager(
 		private val checkCertificate: Boolean,
 		private val certSerialNumber: BigInteger? = null
@@ -160,7 +163,7 @@ class SlardarHTTP {
 			}
 			requestConnection.inputStream.close()
 			val responseCookies = HashMap<String, String>()
-			requestConnection.headerFields.forEach() { (headerName, headerValue) ->
+			requestConnection.headerFields.forEach { (headerName, headerValue) ->
 				if (headerName == "Set-Cookie") {
 					headerValue.forEach { setCookieValue ->
 						val cookieValue = setCookieValue.split(";")[0]
@@ -198,7 +201,7 @@ class SlardarHTTP {
 				)
 			} catch (slardarException: SlardarHTTPException) {
 				val resultJSON = try {
-					JSONObject(slardarException.message)
+					JSONObject(slardarException.message!!)
 				} catch (ex: java.lang.Exception) {
 					throw slardarException
 				}
@@ -230,14 +233,14 @@ class SlardarHTTP {
 				val returnJSONObject = JSONObject()
 				returnJSONObject.put("response", JSONObject(response.text))
 				val responseCookies = JSONObject()
-				response.cookies.forEach() { (name, value) ->
+				response.cookies.forEach { (name, value) ->
 					responseCookies.put(name, value)
 				}
 				returnJSONObject.put("cookies", responseCookies)
 				return returnJSONObject
 			} catch (slardarException: SlardarHTTPException) {
 				val resultJSON = try {
-					JSONObject(slardarException.message)
+					JSONObject(slardarException.message!!)
 				} catch (ex: java.lang.Exception) {
 					throw slardarException
 				}
@@ -422,7 +425,7 @@ class SlardarHTTP {
 			var hasLanguage = false
 			if (!headers.isNullOrEmpty()) {
 				for (header in headers.iterator()) {
-					when (header.key.toLowerCase(Locale.getDefault())) {
+					when (header.key.lowercase(Locale.getDefault())) {
 						"user-agent" -> {
 							hasUA = true
 						}
@@ -430,7 +433,7 @@ class SlardarHTTP {
 							hasLanguage = true
 						}
 					}
-					if (header.key.toLowerCase(Locale.getDefault()) != "content-length") {
+					if (header.key.lowercase(Locale.getDefault()) != "content-length") {
 						requestConnection.setRequestProperty(header.key, header.value)
 					}
 				}
@@ -550,7 +553,7 @@ class SlardarHTTP {
 						responseText += scanner.nextLine() + "\r\n"
 					}
 					requestConnection.errorStream.close()
-					if (!responseText.isNullOrEmpty()) {
+					if (responseText.isNotEmpty()) {
 						throw SlardarHTTPException(
 							responseText,
 							requestConnection.responseCode
