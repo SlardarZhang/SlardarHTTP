@@ -1,0 +1,18 @@
+plugins {
+    id 'org.jetbrains.kotlin.jvm' version '1.9.0'
+}
+
+group = 'net.slardar.slardarhttp'
+version = '1.1'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    api("org.json:json:20220924")
+}
+
+compileKotlin {
+    kotlinOptions.jvmTarget = '11'
+}

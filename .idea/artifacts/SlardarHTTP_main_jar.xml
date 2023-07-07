@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="SlardarHTTP.main:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/SlardarHTTP_main_jar</output-path>
+    <root id="archive" name="SlardarHTTP.main.jar">
+      <element id="module-output" name="SlardarHTTP.main" />
+    </root>
+  </artifact>
+</component>
