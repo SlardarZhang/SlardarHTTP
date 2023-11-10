@@ -1,5 +1,7 @@
 package net.slardar.slardarhttp
 
+import net.slardar.slardarhttp.exception.SlardarHTTPException
+import net.slardar.slardarhttp.exception.SlardarHTTPJSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.OutputStream
@@ -19,19 +21,6 @@ import javax.net.ssl.X509TrustManager
 
 @Suppress("unused", "MemberVisibilityCanBePrivate")
 class SlardarHTTP {
-    class SlardarHTTPException(message: String, private val errorCode: Int) : Exception(message) {
-        fun getErrorCode(): Int {
-            return errorCode
-        }
-    }
-
-    @Suppress("MemberVisibilityCanBePrivate", "CanBeParameter")
-    class SlardarHTTPJSONException(val jsonMessage: JSONObject, private val errorCode: Int) :
-        Exception(jsonMessage.toString()) {
-        fun getErrorCode(): Int {
-            return errorCode
-        }
-    }
 
     class CookiesString(val cookies: HashMap<String, String>, val text: String)
 
